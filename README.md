@@ -117,6 +117,7 @@ composer create-project laravel/laravel:^12.0 gestion-proyectos
 cd gestion-proyectos
 php artisan serve
 ```
+También si es la última versión no hace falta indicar el 12: composer create-project laravel/laravel gestion-proyectos
 
 ---
 
