@@ -320,9 +320,9 @@ class TaskService {
 ## Paso 4: Crear controladores
 
 ```bash
-php artisan make:controller UserController
-php artisan make:controller ProjectController
-php artisan make:controller TaskController
+php artisan make:controller UserController --api
+php artisan make:controller ProjectController --api
+php artisan make:controller TaskController --api
 ```
 
 Ejemplo UserController:
