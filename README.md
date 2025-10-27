@@ -391,3 +391,357 @@ return Application::configure(basePath: dirname(__DIR__))
   "name
 ```
 
+Perfecto 🔥
+Aquí tienes una **guía completa y actualizada para Laravel 12**, paso a paso, con todo el proceso de **autenticación (Sanctum)** + **autorización (Policies)**
+💾 Formato **Markdown (.md)** — lista para documentar o compartir con tu equipo.
+
+---
+
+# 🛡️ Autenticación y Autorización en Laravel 12 (Sanctum + Policies)
+
+> Guía práctica para proteger APIs con Laravel 12, sin usar `Kernel.php`,
+> aprovechando la nueva configuración en `bootstrap/app.php`.
+
+---
+
+## ⚙️ 1. Instalación y configuración de Sanctum
+
+Sanctum es el sistema recomendado por Laravel para autenticar APIs usando **tokens personales**.
+
+### 🔹 Instalar Sanctum
+
+```bash
+composer require laravel/sanctum
+```
+
+### 🔹 Publicar configuración y migraciones
+
+```bash
+php artisan vendor:publish --provider="Laravel\Sanctum\SanctumServiceProvider"
+php artisan migrate
+```
+
+Esto creará la tabla `personal_access_tokens`.
+
+---
+
+## ⚙️ 2. Configurar Sanctum en `app/Http/Kernel.php` (Laravel 11 o anterior)
+
+En **Laravel 12**, el `Kernel` ya **no se usa directamente**.
+En su lugar, configuramos los middlewares en `bootstrap/app.php`.
+
+### 📁 `bootstrap/app.php`
+
+Agrega el middleware de Sanctum:
+
+```php
+use Illuminate\Foundation\Application;
+use Illuminate\Foundation\Configuration\Exceptions;
+use Illuminate\Foundation\Configuration\Middleware;
+
+return Application::configure(basePath: dirname(__DIR__))
+    ->withRouting(
+        web: __DIR__.'/../routes/web.php',
+        api: __DIR__.'/../routes/api.php',
+        commands: __DIR__.'/../routes/console.php',
+        health: '/up',
+    )
+    ->withMiddleware(function (Middleware $middleware): void {
+        // 🔹 Middleware globales o alias
+        $middleware->api(prepend: [
+            \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class,
+        ]);
+
+        // 🔸 Alias personalizados
+        $middleware->alias([
+            'role' => \App\Http\Middleware\RoleMiddleware::class,
+        ]);
+    })
+    ->withExceptions(function (Exceptions $exceptions): void {
+        //
+    })
+    ->create();
+```
+
+---
+
+## 👤 3. Configurar el modelo `User`
+
+Asegúrate de que el modelo `User` use el trait de Sanctum.
+
+### 📁 `app/Models/User.php`
+
+```php
+use Laravel\Sanctum\HasApiTokens;
+
+class User extends Authenticatable
+{
+    use HasApiTokens, HasFactory, Notifiable;
+
+    protected $fillable = [
+        'name',
+        'email',
+        'password',
+        'role',
+    ];
+
+    protected $hidden = [
+        'password',
+        'remember_token',
+    ];
+
+    protected function casts(): array
+    {
+        return [
+            'email_verified_at' => 'datetime',
+            'password' => 'hashed',
+        ];
+    }
+}
+```
+
+---
+
+## 🔐 4. Crear endpoints de autenticación
+
+Creamos un **AuthController** para manejar login, registro y logout.
+
+### 📁 `app/Http/Controllers/AuthController.php`
+
+```php
+namespace App\Http\Controllers;
+
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
+use App\Models\User;
+
+class AuthController extends Controller
+{
+    // 🔹 Registro
+    public function register(Request $request)
+    {
+        $validated = $request->validate([
+            'name' => 'required|string',
+            'email' => 'required|email|unique:users',
+            'password' => 'required|min:6',
+        ]);
+
+        $user = User::create([
+            'name' => $validated['name'],
+            'email' => $validated['email'],
+            'password' => $validated['password'],
+            'role' => 'user', // Por defecto
+        ]);
+
+        return response()->json(['user' => $user], 201);
+    }
+
+    // 🔹 Login
+    public function login(Request $request)
+    {
+        $user = User::where('email', $request->email)->first();
+
+        if (! $user || ! Hash::check($request->password, $user->password)) {
+            return response()->json(['message' => 'Credenciales inválidas'], 401);
+        }
+
+        $token = $user->createToken('api_token')->plainTextToken;
+
+        return response()->json([
+            'token' => $token,
+            'user' => $user,
+        ]);
+    }
+
+    // 🔹 Logout
+    public function logout(Request $request)
+    {
+        $request->user()->currentAccessToken()->delete();
+
+        return response()->json(['message' => 'Sesión cerrada correctamente']);
+    }
+}
+```
+
+---
+
+## 🌐 5. Rutas API protegidas
+
+### 📁 `routes/api.php`
+
+```php
+use App\Http\Controllers\AuthController;
+use App\Http\Controllers\ProjectController;
+use App\Http\Controllers\TaskController;
+use App\Http\Controllers\UserController;
+use App\Http\Controllers\ReportController;
+use Illuminate\Support\Facades\Route;
+
+// 🧱 Autenticación
+Route::post('/register', [AuthController::class, 'register']);
+Route::post('/login', [AuthController::class, 'login']);
+
+// 🔐 Rutas protegidas
+Route::middleware('auth:sanctum')->group(function () {
+
+    Route::post('/logout', [AuthController::class, 'logout']);
+
+    Route::apiResource('users', UserController::class);
+    Route::apiResource('projects', ProjectController::class);
+    Route::apiResource('tasks', TaskController::class);
+
+    // Reportes
+    Route::get('/reports/tasks-summary', [ReportController::class, 'tasksSummary'])
+        ->middleware('role:admin,manager');
+});
+```
+
+---
+
+## 🧱 6. Middleware de roles
+
+### 📁 `app/Http/Middleware/RoleMiddleware.php`
+
+```php
+namespace App\Http\Middleware;
+
+use Closure;
+use Illuminate\Http\Request;
+
+class RoleMiddleware
+{
+    public function handle(Request $request, Closure $next, ...$roles)
+    {
+        $user = $request->user();
+
+        if (! $user || ! in_array($user->role, $roles)) {
+            return response()->json(['message' => 'No autorizado'], 403);
+        }
+
+        return $next($request);
+    }
+}
+```
+
+✅ Registrado como alias en `bootstrap/app.php`:
+
+```php
+$middleware->alias([
+    'role' => \App\Http\Middleware\RoleMiddleware::class,
+]);
+```
+
+---
+
+## 🧭 7. Autorización con Policies
+
+Las **Policies** controlan la autorización a nivel de modelo (quién puede modificar, ver o eliminar algo).
+
+### 🔹 Crear una Policy
+
+```bash
+php artisan make:policy ProjectPolicy --model=Project
+```
+
+### 📁 `app/Policies/ProjectPolicy.php`
+
+```php
+namespace App\Policies;
+
+use App\Models\User;
+use App\Models\Project;
+
+class ProjectPolicy
+{
+    public function viewAny(User $user): bool
+    {
+        return true;
+    }
+
+    public function view(User $user, Project $project): bool
+    {
+        return $user->id === $project->user_id || $user->role === 'admin';
+    }
+
+    public function update(User $user, Project $project): bool
+    {
+        return $user->id === $project->user_id || $user->role === 'admin';
+    }
+
+    public function delete(User $user, Project $project): bool
+    {
+        return $user->role === 'admin';
+    }
+}
+```
+
+### 📁 Registrar la Policy
+
+`AuthServiceProvider`:
+
+```php
+namespace App\Providers;
+
+use App\Models\Project;
+use App\Policies\ProjectPolicy;
+use Illuminate\Foundation\Support\Providers\AuthServiceProvider as ServiceProvider;
+
+class AuthServiceProvider extends ServiceProvider
+{
+    protected $policies = [
+        Project::class => ProjectPolicy::class,
+    ];
+
+    public function boot(): void
+    {
+        //
+    }
+}
+```
+
+---
+
+## 🔒 8. Usar Policies en controladores
+
+Ejemplo en `ProjectController`:
+
+```php
+public function update(Request $request, Project $project)
+{
+    $this->authorize('update', $project);
+
+    $project->update($request->all());
+
+    return response()->json($project);
+}
+```
+
+Laravel verificará automáticamente la `ProjectPolicy`.
+
+---
+
+## 🧠 9. Flujo de autenticación (para Postman)
+
+1. **POST** `/api/register` → crear usuario
+2. **POST** `/api/login` → obtener token
+3. Añadir el token en el **header**:
+
+   ```
+   Authorization: Bearer TU_TOKEN_AQUI
+   ```
+4. Ya puedes acceder a rutas protegidas (`/projects`, `/tasks`, `/reports/...`).
+
+---
+
+## ✅ Conclusión
+
+Con esta configuración tienes:
+
+* 🔐 Autenticación con **Sanctum**
+* 🧱 Control de acceso con **roles personalizados**
+* 🧭 Autorización a nivel de modelo con **Policies**
+* 🧩 Todo adaptado a **Laravel 12** sin `Kernel.php`
+
+---
+
+
