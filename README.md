@@ -744,4 +744,63 @@ Con esta configuración tienes:
 
 ---
 
+Pruebas en Postman
+
+## Register
+
+**POST** `http://127.0.0.1:8000/api/register`
+
+**Body JSON:**
+```json
+{
+  "name": "Admin",
+  "email": "admin@x.com",
+  "password": "123456",
+  "role": "admin"
+}
+````
+
+> Respuesta incluye `token`.
+
+---
+
+## Login
+
+**POST** `http://127.0.0.1:8000/api/login`
+
+**Body JSON:**
+
+```json
+{
+  "email": "admin@x.com",
+  "password": "123456"
+}
+```
+
+> Guardar token (`plainTextToken`).
+
+---
+
+## Probar rutas protegidas
+
+En Postman, en **Headers** añade:
+
+```
+Authorization: Bearer <token>
+Accept: application/json
+```
+
+* **GET** `/api/projects` (si protegida con `auth:sanctum`) → funciona.
+* **POST** `/api/projects` → si tu Policy permite `create` al rol, creación OK.
+* Intenta acceder con usuario `developer` a crear proyecto → debe devolver `403`.
+
+---
+
+## Logout
+
+**POST** `/api/logout` con **Authorization header** → token eliminado.
+
+```
+```
+
 
