@@ -803,4 +803,84 @@ Accept: application/json
 ```
 ```
 
+# Solución al fallo `$this->authorize()` marcado en rojo en Laravel 12
+
+Si tu IDE marca en rojo la línea:
+
+```php
+$this->authorize('view', $project);
+````
+
+significa que **Laravel no reconoce el método `authorize`**, lo cual normalmente se debe a que **el trait necesario no está incluido** o el namespace no está importado correctamente.
+
+---
+
+## 1️⃣ Revisar el Controller base
+
+Asegúrate de que tu controlador base `app/Http/Controllers/Controller.php` tenga este contenido:
+
+```php
+<?php
+
+namespace App\Http\Controllers;
+
+use Illuminate\Foundation\Auth\Access\AuthorizesRequests; // 🔹 Importante
+use Illuminate\Foundation\Bus\DispatchesJobs;
+use Illuminate\Foundation\Validation\ValidatesRequests;
+use Illuminate\Routing\Controller as BaseController;
+
+class Controller extends BaseController
+{
+    use AuthorizesRequests, DispatchesJobs, ValidatesRequests;
+}
+```
+
+* `AuthorizesRequests` define `$this->authorize()`.
+* Sin este trait, Laravel no reconoce el método y tu IDE lo marcará en rojo.
+
+---
+
+## 2️⃣ Importar el modelo en tu controlador
+
+En `ProjectController.php`:
+
+```php
+use App\Models\Project;
+```
+
+Esto permite que Laravel relacione automáticamente la Policy correcta para `$project`.
+
+---
+
+## 3️⃣ Método `show` con Policy
+
+```php
+public function show(string $id)
+{
+    $project = $this->service->find($id); // Capa Service
+
+    $this->authorize('view', $project); // 🔒 Policy aplicada
+
+    return response()->json($project);
+}
+```
+
+---
+
+## 4️⃣ Pasos adicionales si sigue marcado en rojo
+
+1. Ejecuta en consola:
+
+```bash
+composer dump-autoload
+```
+
+2. Reinicia tu IDE para que recargue los namespaces.
+3. Verifica que tu Policy esté registrada correctamente en `AuthServiceProvider`.
+
+---
+
+
+
+
 
